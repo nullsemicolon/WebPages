@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Dynamic Map with Logging</title>
+  <meta charset="utf-8" />
+  <style>
+    #map { height: 400px; margin-top: 1em; }
+    #inputContainer {
+      margin-bottom: 1em;
+      transition: max-height 0.5s ease-out, opacity 0.5s ease-out;
+      overflow: hidden;
+    }
+    .collapsed {
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+    }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body>
+  <h3>Paste data: address, lat, long (CSV)</h3>
+  <div id="inputContainer">
+    <textarea id="inputData" placeholder="e.g.\n123 Main St, 37.7749, -122.4194"></textarea>
+    <button onclick="generateMap()">Generate Map</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const webhookUrl = 'https://script.google.com/macros/s/AKfycbxIktB9zeNWn_zZlLHqyoalUHCJWbvCyyadyXfMuA804sVgVVGTIgj-g6gjugJPqgrk/exec';
+    let map;
+    let userMarker;
+
+    function createNumberedPinIcon(number, color = 'blue') {
+      const pinColor = color === 'green' ? '#4CAF50' : '#2196F3';
+      const svgIcon = `
+        <svg width="30" height="42" viewBox="0 0 30 42" xmlns="http://www.w3.org/2000/svg">
+          <path d="M15 0C6.7 0 0 6.7 0 15c0 9.8 13.3 26.2 14.2 27.3a1 1 0 0 0 1.6 0C16.7 41.2 30 24.8 30 15 30 6.7 23.3 0 15 0z" fill="${pinColor}"/>
+          <text x="15" y="22" font-size="14" font-family="Arial" fill="white" text-anchor="middle" dominant-baseline="middle" font-weight="bold">${number}</text>
+        </svg>
+      `;
+      return L.divIcon({
+        className: '',
+        html: svgIcon,
+        iconSize: [30, 42],
+        iconAnchor: [15, 42],
+        popupAnchor: [0, -36]
+      });
+    }
+
+    function generateMap() {
+      document.getElementById('inputContainer').classList.add('collapsed');
+      document.getElementById('map').innerHTML = '';
+      map = L.map('map').setView([0, 0], 2);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+      const input = document.getElementById('inputData').value;
+      const lines = input.trim().split('\n');
+      const visitedLocations = new Set();
+
+      lines.forEach((line, index) => {
+        const [address, lat, lon] = line.split(',').map(x => x.trim());
+        if (!lat || !lon) return;
+
+        const streetNum = address.match(/\d+/)?.[0] || '?';
+        const marker = L.marker([parseFloat(lat), parseFloat(lon)], {
+          icon: createNumberedPinIcon(streetNum, 'blue')
+        }).addTo(map);
+
+        const popupContent = document.createElement('div');
+        popupContent.innerHTML = `<b>${address}</b><br/><button id="log-btn-${index}">Log Visit</button>`;
+        marker.bindPopup(popupContent);
+
+        popupContent.querySelector(`#log-btn-${index}`).addEventListener('click', () => {
+          if (visitedLocations.has(address)) {
+            popupContent.innerHTML = `<b>${address}</b><br/><span style="color: orange;">⚠️ Already logged</span>`;
+            return;
+          }
+
+          fetch(webhookUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ location_name: address, visited: 'Yes' })
+          })
+          .then(() => {
+            visitedLocations.add(address);
+            popupContent.innerHTML = `<b>${address}</b><br/><span style="color: green;">✅ Visit logged!</span>`;
+            marker.setIcon(createNumberedPinIcon(streetNum, 'green'));
+          })
+          .catch(err => {
+            console.error(err);
+            alert('Error logging visit');
+          });
+        });
+      });
+
+      // GPS tracking
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(position => {
+          const userLat = position.coords.latitude;
+          const userLon = position.coords.longitude;
+
+          if (userMarker) {
+            userMarker.setLatLng([userLat, userLon]);
+          } else {
+            const personIcon = L.icon({
+              iconUrl: 'https://cdn-icons-png.flaticon.com/512/61/61168.png',
+              iconSize: [32, 32],
+              iconAnchor: [16, 32]
+            });
+            userMarker = L.marker([userLat, userLon], {
+              icon: personIcon
+            }).addTo(map);
+            map.setView([userLat, userLon], 13);
+          }
+
+        }, error => {
+          console.error("Geolocation error:", error.message);
+        }, {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 5000
+        });
+      }
+    }
+  </script>
+</body>
+</html>
