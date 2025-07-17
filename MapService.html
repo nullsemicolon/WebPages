@@ -100,6 +100,17 @@
     let map;
     let userMarker;
 
+    // Autofill from URL parameter
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const data = params.get('data');
+
+      if (data) {
+        const decoded = decodeURIComponent(data).split('|').join('\n');
+        document.getElementById('inputData').value = decoded;
+      }
+    });
+
     function createNumberedPinIcon(number, color = 'blue') {
       const pinColor = color === 'green' ? '#4CAF50' : '#2196F3';
       const svgIcon = `
@@ -124,7 +135,11 @@
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
       const input = document.getElementById('inputData').value;
-      const lines = input.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      const lines = input
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+
       const visitedLocations = new Set();
 
       lines.forEach((line, index) => {
